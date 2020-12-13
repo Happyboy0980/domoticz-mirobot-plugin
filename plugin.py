@@ -1,6 +1,7 @@
 #       
 #       Xiaomi Mi Robot Vacuum Plugin
-#       Author: mrin, 2017
+#       Author: mrin, 201
+#		Update by HFman 13-4-2020 
 #       
 """
 <plugin key="xiaomi-mi-robot-vacuum" name="Xiaomi Mi Robot Vacuum" author="mrin" version="0.1.3" wikilink="https://github.com/mrin/domoticz-mirobot-plugin" externallink="">
@@ -43,9 +44,15 @@ class BasePlugin:
         "SelectorStyle": "0"
     }
     fanOptions = {
-        "LevelActions": "||||",
-        "LevelNames": "Off|Quiet|Balanced|Turbo|Max",
+        "LevelActions": "|||||",
+        "LevelNames": "Off|Gentle|Quiet|Balanced|Turbo|Max",
         "LevelOffHidden": "true",
+        "SelectorStyle": "0"
+   }
+    mopOptions = {
+        "LevelActions": "||||",
+        "LevelNames": "Off|Low|Medium|High",
+        "LevelOffHidden": "false",
         "SelectorStyle": "0"
     }
     careOptions = {
@@ -69,15 +76,18 @@ class BasePlugin:
     cSensorsUnit = 8
     cFilterUnit = 9
     cResetControlUnit = 10
+    errorUnit = 11
+    mopSelectorUnit = 12
 
     # statuses by protocol
     # https://github.com/marcelrv/XiaomiRobotVacuumProtocol/blob/master/StatusMessage.md
+    # updated https://github.com/marcelrv/XiaomiRobotVacuumProtocol/blob/master/status.md
     states = {
         0: 'Unknown 0',
         1: 'Initiating',
         2: 'Sleeping',
         3: 'Waiting',
-        4: 'Unknown 4',
+        4: 'Remote Control',
         5: 'Cleaning',
         6: 'Back to home',
         7: 'Manual mode',
@@ -89,9 +99,45 @@ class BasePlugin:
         13: 'Shutting down',
         14: 'Updating',
         15: 'Docking',
+        16: 'Go To',
         17: 'Zone cleaning',
+        18: 'Room Clean',
         100: 'Full'
     }
+
+    errors = {
+
+	None: 'No error',
+	0: 'No error',
+	1: 'Laser sensor fault',
+	2: 'Collision sensor fault',
+	3: 'Wheel floating',
+	4: 'Cliff sensor fault',
+	5: 'Main brush blocked',
+	6: 'Side brush blocked',
+	7: 'Wheel blocked',
+	8: 'Device stuck',
+	9: 'Dust bin missing',
+	10: 'Filter blocked',
+	11: 'Magnetic field detected',
+	12: 'Low battery',
+	13: 'Charging problem',
+	14: 'Battery failure',
+	15: 'Wall sensor fault',
+	16: 'Uneven surface',
+	17: 'Side brush failure',
+	18: 'Suction fan failure',
+	19: 'Unpowered charging station',
+	20: 'Unknown Error',
+	21: 'Laser pressure sensor problem',
+	22: 'Charge sensor problem',
+	23: 'Dock problem',
+	24: 'No-go zone or invisible wall detected',
+	254: 'Bin full',
+	255: 'Internal error',
+	-1: 'Unknown Error'
+   }
+
 
 
     def __init__(self):
@@ -118,6 +164,9 @@ class BasePlugin:
         if self.statusUnit not in Devices:
             Domoticz.Device(Name='Status', Unit=self.statusUnit, Type=17,  Switchtype=17, Image=iconID).Create()
 
+        if self.errorUnit not in Devices:
+            Domoticz.Device(Name='Error', Unit=self.errorUnit, Type=17,  Switchtype=17, Image=iconID).Create()
+
         if self.controlUnit not in Devices:
             Domoticz.Device(Name='Control', Unit=self.controlUnit, TypeName='Selector Switch',
                             Image=iconID, Options=self.controlOptions).Create()
@@ -128,6 +177,10 @@ class BasePlugin:
         elif self.fanSelectorUnit not in Devices and Parameters['Mode5'] == 'selector':
             Domoticz.Device(Name='Fan Level', Unit=self.fanSelectorUnit, TypeName='Selector Switch',
                                 Image=iconID, Options=self.fanOptions).Create()
+
+        if self.mopSelectorUnit not in Devices and Parameters['Mode5'] == 'selector':
+            Domoticz.Device(Name='Mop Level', Unit=self.mopSelectorUnit, TypeName='Selector Switch',
+                                Image=iconID, Options=self.mopOptions).Create()
 
         if self.batteryUnit not in Devices:
             Domoticz.Device(Name='Battery', Unit=self.batteryUnit, TypeName='Custom', Image=iconID,
@@ -174,19 +227,28 @@ class BasePlugin:
                 if result['cmd'] == 'status':
 
                     UpdateDevice(self.statusUnit,
-                                 (1 if result['state_code'] in [5, 6, 11, 17] else 0), # ON is Cleaning, Back to home, Spot cleaning
+                                 (1 if result['state_code'] in [5, 6, 11, 17, 18] else 0), # ON is Cleaning, Back to home, Spot cleaning
                                  self.states.get(result['state_code'], 'Undefined')
                                  )
 
+                    UpdateDevice(self.errorUnit,
+                                 (0 if result['error'] in [None, 0] else 1), # Have Error when feedback is not 0
+                                 self.errors.get(result['error'], 'Undefined')
+                                 )
+
+
                     UpdateDevice(self.batteryUnit, result['battery'], str(result['battery']), result['battery'],
                                  AlwaysUpdate=(self.heartBeatCnt % 100 == 0))
+								 					 
 
                     if Parameters['Mode5'] == 'dimmer':
                         UpdateDevice(self.fanDimmerUnit, 2, str(result['fan_level'])) # nValue=2 for show percentage, instead ON/OFF state
                     else:
-                        level = {38: 10, 60: 20, 77: 30, 90: 40}.get(result['fan_level'], None)
+                        level = {105: 10, 101: 20, 102: 30, 103: 40, 104: 50}.get(result['fan_level'], None)
                         if level: UpdateDevice(self.fanSelectorUnit, 1, str(level))
-
+                        level = {200: 00, 201: 10, 202: 20, 203: 30, 204: 40}.get(result['water_box_mode'], None)
+                        if level: UpdateDevice(self.mopSelectorUnit, 1, str(level))
+										
                 elif result['cmd'] == 'consumable_status':
 
                     mainBrush = cPercent(result['main_brush'], 300)
@@ -251,12 +313,17 @@ class BasePlugin:
                 self.apiRequest('find')
 
         elif self.fanDimmerUnit == Unit and Parameters['Mode5'] == 'dimmer':
-            Level = 1 if Level == 0 else 100 if Level > 100 else Level
+            Level = 101 if Level == 101 else 105 if Level > 105 else Level
             if self.apiRequest('set_fan_level', Level): UpdateDevice(self.fanDimmerUnit, 2, str(Level))
 
         elif self.fanSelectorUnit == Unit and Parameters['Mode5'] == 'selector':
-            num_level = {10: 38, 20: 60, 30: 77, 40: 90}.get(Level, None)
+            num_level = {10: 105, 20: 101, 30: 102, 40: 103, 50: 104}.get(Level, None)
             if num_level and self.apiRequest('set_fan_level', num_level): UpdateDevice(self.fanSelectorUnit, 1, str(Level))
+
+        elif self.mopSelectorUnit == Unit and Parameters['Mode5'] == 'selector':
+            num_level = {00: 200, 10: 201, 20: 202, 30: 203, 40: 204}.get(Level, None)
+            if num_level and self.apiRequest('set_mop_level', num_level): UpdateDevice(self.mopSelectorUnit, 1, str(Level))
+
 
         elif self.cResetControlUnit == Unit:
 
