@@ -127,7 +127,21 @@ class VacuumCommand(object):
             'battery': res.battery,
             'fan_level': res.fanspeed,
             'clean_seconds': res.data["clean_time"],
-            'clean_area': res.clean_area
+            'clean_area': res.clean_area,
+            'water_box_mode': res.data["water_box_mode"],
+            'water_box_carriage_status': res.data["water_box_carriage_status"],
+            'water_box_status': res.data["water_box_status"],
+            'dnd_enabled': res.data["dnd_enabled"],
+            'in_cleaning': res.data["in_cleaning"],
+            'in_fresh_state': res.data["in_fresh_state"],
+            'in_returning': res.data["in_returning"],
+            'is_locating': res.data["is_locating"],
+            'lab_status': res.data["lab_status"],
+            'lock_status': res.data["lock_status"],
+            'map_present': res.data["map_present"],
+            'map_status': res.data["map_status"],
+            'mop_forbidden_enable': res.data["mop_forbidden_enable"],
+            'msg_seq': res.data["msg_seq"]
         }
 
     @classmethod
@@ -157,6 +171,10 @@ class VacuumCommand(object):
     @classmethod
     def set_fan_level(cls, vac, level):
         return {'code': vac.set_fan_speed(int(level))}
+
+    @classmethod
+    def set_mob_level(cls, vac, level):
+        return {'code': vac.set_waterflow(int(level))}
 
     @classmethod
     def consumable_status(cls, vac):
